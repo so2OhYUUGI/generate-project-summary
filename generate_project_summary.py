@@ -1,6 +1,8 @@
 import os
 import fnmatch
-import chardet
+import zipfile
+import shutil
+from pathlib import Path
 
 def is_binary(file_path):
     with open(file_path, 'rb') as file:
@@ -56,7 +58,6 @@ def generate_project_summary(project_dir):
                             summary += f'{subindent}- {item}\n'
                             content = read_file_contents(item_path)
                             if content.strip():
-                                # ファイル名をプロジェクト名からの相対パスで表示
                                 relative_file_path = os.path.relpath(item_path, project_dir)
                                 file_contents_section += f'### {relative_file_path}\n\n```\n{content}\n```\n\n'
                         else:
@@ -64,8 +65,16 @@ def generate_project_summary(project_dir):
 
     traverse_directory(project_dir, 0)
 
-    with open(f'{project_name}_project_summary.txt', 'w', encoding='utf-8') as file:
+    # サマリーファイルを保存するサブフォルダを作成
+    summaries_folder = os.path.join(os.path.dirname(__file__), 'summaries')
+    os.makedirs(summaries_folder, exist_ok=True)
+
+    # サマリーファイルをサブフォルダに保存
+    summary_file_path = os.path.join(summaries_folder, f'{project_name}_project_summary.txt')
+    with open(summary_file_path, 'w', encoding='utf-8') as file:
         file.write(summary + file_contents_section)
+
+    print(f"Project summary has been saved to: {summary_file_path}")
 
 def read_gitignore(project_dir):
     gitignore_path = os.path.join(project_dir, '.gitignore')
@@ -83,22 +92,77 @@ def read_gitignore(project_dir):
     return []
 
 def read_summaryignore(project_dir):
-    summaryignore_path = os.path.join(project_dir, '.summaryignore')
-    if os.path.exists(summaryignore_path):
-        with open(summaryignore_path, 'r') as file:
-            patterns = [line.strip() for line in file if line.strip() and not line.startswith('#')]
-            expanded_patterns = []
-            for pattern in patterns:
-                expanded_patterns.append(pattern)
-                if '/' in pattern:
-                    expanded_patterns.append(pattern.replace('/', '\\'))
-                if '\\' in pattern:
-                    expanded_patterns.append(pattern.replace('\\', '/'))
-            return expanded_patterns
-    return []
+    summaryignore_patterns = []
+    
+    # プロジェクトディレクトリ内の .summaryignore を読み込む
+    project_summaryignore = os.path.join(project_dir, '.summaryignore')
+    if os.path.exists(project_summaryignore):
+        summaryignore_patterns.extend(read_ignore_file(project_summaryignore))
+    
+    # スクリプトが存在するディレクトリ内の .summaryignore を読み込む
+    script_dir_summaryignore = os.path.join(Path(__file__).parent, '.summaryignore')
+    if os.path.exists(script_dir_summaryignore):
+        summaryignore_patterns.extend(read_ignore_file(script_dir_summaryignore))
+    
+    return list(set(summaryignore_patterns))  # 重複を除去
+
+def read_ignore_file(file_path):
+    with open(file_path, 'r') as file:
+        patterns = [line.strip() for line in file if line.strip() and not line.startswith('#')]
+        expanded_patterns = []
+        for pattern in patterns:
+            expanded_patterns.append(pattern)
+            if '/' in pattern:
+                expanded_patterns.append(pattern.replace('/', '\\'))
+            if '\\' in pattern:
+                expanded_patterns.append(pattern.replace('\\', '/'))
+        return expanded_patterns
+
+def list_zip_files(folder):
+    return [f for f in os.listdir(folder) if f.endswith('.zip')]
+
+def extract_zip(zip_path, extract_to):
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
+
+def remove_folder(folder):
+    shutil.rmtree(folder)
+
+def main():
+    choice = input("Choose an option:\n1. Use a local directory\n2. Use a ZIP file\nEnter your choice (1 or 2): ")
+
+    if choice == '1':
+        project_directory = input('Enter the project directory path (leave blank for current directory): ')
+        if not project_directory:
+            project_directory = os.getcwd()
+        generate_project_summary(project_directory)
+    elif choice == '2':
+        zip_folder = os.path.join(os.path.dirname(__file__), 'zip_files')
+        os.makedirs(zip_folder, exist_ok=True)
+        
+        zip_files = list_zip_files(zip_folder)
+        if not zip_files:
+            print("No ZIP files found in the zip_files folder.")
+            return
+
+        print("Available ZIP files:")
+        for i, file in enumerate(zip_files, 1):
+            print(f"{i}. {file}")
+
+        zip_choice = int(input("Enter the number of the ZIP file you want to use: ")) - 1
+        if zip_choice < 0 or zip_choice >= len(zip_files):
+            print("Invalid choice.")
+            return
+
+        selected_zip = os.path.join(zip_folder, zip_files[zip_choice])
+        extract_folder = os.path.join(zip_folder, 'extracted')
+        os.makedirs(extract_folder, exist_ok=True)
+
+        extract_zip(selected_zip, extract_folder)
+        generate_project_summary(extract_folder)
+        remove_folder(extract_folder)
+    else:
+        print("Invalid choice.")
 
 if __name__ == '__main__':
-    project_directory = input('Enter the project directory path (leave blank for current directory): ')
-    if not project_directory:
-        project_directory = os.getcwd()
-    generate_project_summary(project_directory)
+    main()
