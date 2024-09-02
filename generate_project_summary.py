@@ -27,8 +27,7 @@ def is_ignored(path, project_dir, gitignore_patterns, summaryignore_patterns, ad
             return True
     return False
 
-def generate_project_summary(project_dir):
-    project_name = os.path.basename(project_dir)
+def generate_project_summary(project_dir, project_name):
     summary = f'# {project_name}\n\n## Directory Structure\n\n'
 
     gitignore_patterns = read_gitignore(project_dir)
@@ -129,13 +128,54 @@ def remove_folder(folder):
     shutil.rmtree(folder)
 
 def main():
-    choice = input("Choose an option:\n1. Use a local directory\n2. Use a ZIP file\nEnter your choice (1 or 2): ")
+    history = []  # 履歴を保持するリスト
+    history_file = 'history.txt'
+    
+    # 履歴ファイルが存在すれば、履歴を読み込む
+    if os.path.exists(history_file):
+        with open(history_file, 'r') as file:
+            history = [line.strip() for line in file]
+
+    # 選択肢を表示
+    choice = input("Choose an option:\n1. Use a directory or view past directories\n2. Use a ZIP file\nEnter your choice (1 or 2): ")
 
     if choice == '1':
-        project_directory = input('Enter the project directory path (leave blank for current directory): ')
-        if not project_directory:
-            project_directory = os.getcwd()
-        generate_project_summary(project_directory)
+        # フォルダパスの入力または履歴からの選択
+        if history:
+            print("Past directories:")
+            for i, path in enumerate(history, 1):
+                print(f"{i}. {path}")
+
+        user_input = input('Enter the project directory path or select a number from history (leave blank for current directory): ')
+
+        if user_input.isdigit():
+            try:
+                history_choice = int(user_input) - 1
+                if history_choice < 0 or history_choice >= len(history):
+                    print("Invalid choice.")
+                    return
+                project_directory = history[history_choice]
+            except ValueError:
+                print("Invalid input. Please enter a valid number.")
+                return
+        else:
+            project_directory = user_input.strip()
+            if not project_directory:
+                project_directory = os.getcwd()
+
+            if not os.path.isdir(project_directory):
+                print("Directory does not exist.")
+                return
+
+            # 履歴に追加し、履歴ファイルに保存
+            if project_directory not in history:
+                history.append(project_directory)
+                with open(history_file, 'a') as file:
+                    file.write(project_directory + '\n')
+
+        project_name = os.path.basename(project_directory)
+        generate_project_summary(project_directory, project_name)
+        
     elif choice == '2':
         zip_folder = os.path.join(os.path.dirname(__file__), 'zip_files')
         os.makedirs(zip_folder, exist_ok=True)
@@ -149,20 +189,29 @@ def main():
         for i, file in enumerate(zip_files, 1):
             print(f"{i}. {file}")
 
-        zip_choice = int(input("Enter the number of the ZIP file you want to use: ")) - 1
-        if zip_choice < 0 or zip_choice >= len(zip_files):
-            print("Invalid choice.")
+        try:
+            zip_choice = int(input("Enter the number of the ZIP file you want to use: ")) - 1
+            if zip_choice < 0 or zip_choice >= len(zip_files):
+                print("Invalid choice.")
+                return
+
+            selected_zip = os.path.join(zip_folder, zip_files[zip_choice])
+            extract_folder = os.path.join(zip_folder, 'extracted')
+            os.makedirs(extract_folder, exist_ok=True)
+
+            extract_zip(selected_zip, extract_folder)
+
+            # ZIPファイル名からプロジェクト名を取得
+            project_name = os.path.splitext(zip_files[zip_choice])[0]
+            generate_project_summary(extract_folder, project_name)
+            remove_folder(extract_folder)
+
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
             return
 
-        selected_zip = os.path.join(zip_folder, zip_files[zip_choice])
-        extract_folder = os.path.join(zip_folder, 'extracted')
-        os.makedirs(extract_folder, exist_ok=True)
-
-        extract_zip(selected_zip, extract_folder)
-        generate_project_summary(extract_folder)
-        remove_folder(extract_folder)
     else:
         print("Invalid choice.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
